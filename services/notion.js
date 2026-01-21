@@ -1,6 +1,4 @@
 import { Client as NotionClient } from "@notionhq/client"; 
-import dotenv from "dotenv"; 
-dotenv.config(); 
 
 const notion = new NotionClient({ auth: process.env.NOTION_API_KEY }); 
 const page_id = process.env.NOTION_PARENT_PAGE_ID;
