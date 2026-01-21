@@ -9,25 +9,42 @@ import { createGCalEvent } from "./google-calendar.js";
 import { scheduleLearningReminders } from "./reminder.js";
 import { google } from "googleapis";
 import { registerDebugRoutes } from "./debugRoutes.js";
+import { GoogleAuth } from "google-auth-library";
 
 // --- Load .env ---
 
 dotenv.config();
 
-/*
 const oauth2Client = new google.auth.OAuth2(
   process.env.GCAL_OAUTH_CLIENT_ID,
   process.env.GCAL_OAUTH_CLIENT_SECRET,
   process.env.GCAL_OAUTH_REDIRECT_URI
 );
-*/
 
-import { GoogleAuth } from "google-auth-library";
+const raw = process.env.GOOGLE_CREDENTIALS;
+
+console.log("[google] GOOGLE_CREDENTIALS present:", !!raw);
+console.log("[google] GOOGLE_CREDENTIALS length:", raw?.length ?? 0);
+
+if (!raw || raw === "undefined" || raw === "null") {
+  throw new Error("Missing GOOGLE_CREDENTIALS env var");
+}
+
+let credentials;
+try {
+  credentials = JSON.parse(raw);
+} catch (e) {
+  throw new Error(
+    "GOOGLE_CREDENTIALS is not valid JSON. Did you paste the full JSON (service account) into Railway Variables?"
+  );
+}
 
 const auth = new GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  credentials,
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
+
+export { auth };
 
 
 // --- Setup Express ---
