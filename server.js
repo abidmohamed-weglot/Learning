@@ -15,8 +15,7 @@ import { GoogleAuth } from "google-auth-library";
 
 dotenv.config();
 
-console.log("FOO:", process.env.FOO);
-
+// --- Setup Google Auth ---
 const oauth2Client = new google.auth.OAuth2(
   process.env.GCAL_OAUTH_CLIENT_ID,
   process.env.GCAL_OAUTH_CLIENT_SECRET,
@@ -47,6 +46,9 @@ const auth = new GoogleAuth({
 });
 
 export { auth };
+
+
+
 
 
 // --- Setup Express ---

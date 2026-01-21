@@ -4,9 +4,22 @@ import { GoogleAuth } from "google-auth-library";
 import dotenv from "dotenv";
 dotenv.config();
 
+
+// -- Setup Google Auth with Service Account --
+const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+console.log("[gcal] service account present:", !!raw);
+console.log("[gcal] service account length:", raw?.length ?? 0);
+
+if (!raw) {
+  throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON env var");
+}
+
+const credentials = JSON.parse(raw);
+
 const gAuth = new GoogleAuth({
-	keyFile: process.env.GCAL_KEY_FILE, // chemin vers le fichier de clé JSON
-	scopes: ["https://www.googleapis.com/auth/calendar"],
+  credentials,
+  scopes: ["https://www.googleapis.com/auth/calendar"],
 });
 
 /**
