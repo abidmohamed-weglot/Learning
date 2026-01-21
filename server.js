@@ -279,11 +279,11 @@ app.post("/slack/interactions", verifySlack, async (req, res) => {
       return res.json({ response_action: "errors", errors });
     }
     
-    const targetChannel = process.env.LEARNING_CHANNEL_ID;
+    const targetChannel = process.env.SLACK_LEARNING_CHANNEL_ID;
     if (!targetChannel) {
       await slack.chat.postMessage({
         channel: payload.user.id,
-        text: "LEARNING_CHANNEL_ID non défini côté serveur.",
+        text: "SLACK_LEARNING_CHANNEL_ID non défini côté serveur.",
       });
       return res.json({ response_action: "clear" });
     }
