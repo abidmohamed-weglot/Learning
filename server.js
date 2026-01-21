@@ -22,6 +22,14 @@ const oauth2Client = new google.auth.OAuth2(
 );
 */
 
+import { GoogleAuth } from "google-auth-library";
+
+const auth = new GoogleAuth({
+  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+});
+
+
 // --- Setup Express ---
 const app = express();
 const port = process.env.PORT || 4000;
