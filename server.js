@@ -14,12 +14,13 @@ import { registerDebugRoutes } from "./debugRoutes.js";
 
 dotenv.config();
 
+/*
 const oauth2Client = new google.auth.OAuth2(
   process.env.GCAL_OAUTH_CLIENT_ID,
   process.env.GCAL_OAUTH_CLIENT_SECRET,
   process.env.GCAL_OAUTH_REDIRECT_URI
 );
-
+*/
 
 // --- Setup Express ---
 const app = express();
