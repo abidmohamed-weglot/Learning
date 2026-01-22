@@ -1,394 +1,54 @@
 import express from "express";
 import dotenv from "dotenv";
-import getRawBody from "raw-body";
-import crypto from "crypto";
-import { WebClient } from "@slack/web-api";
-import { DateTime } from "luxon";
-import { createNotionLearning } from "./notion.js";
-import { createGCalEvent } from "./google-calendar.js";
-import { scheduleLearningReminders } from "./reminder.js";
-import { google } from "googleapis";
-import { registerDebugRoutes } from "./debugRoutes.js";
-import { GoogleAuth } from "google-auth-library";
-
-// --- Load .env ---
+import { registerDebugRoutes } from "./utils/debugRoutes.js";
+import { registerSlackRoutes } from "./routes/slack.js";
+import { requiredEnv, envInt } from "./config/env.js";
+import { makeSlackClient } from "./services/slack.js";
 
 dotenv.config();
 
-// --- Setup Google Auth ---
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GCAL_OAUTH_CLIENT_ID,
-  process.env.GCAL_OAUTH_CLIENT_SECRET,
-  process.env.GCAL_OAUTH_REDIRECT_URI
-);
-
-const raw = process.env.GOOGLE_CREDENTIALS;
-
-console.log("[google] GOOGLE_CREDENTIALS present:", !!raw);
-console.log("[google] GOOGLE_CREDENTIALS length:", raw?.length ?? 0);
-
-if (!raw || raw === "undefined" || raw === "null") {
-  throw new Error("Missing GOOGLE_CREDENTIALS env var");
-}
-
-let credentials;
-try {
-  credentials = JSON.parse(raw);
-} catch (e) {
-  throw new Error(
-    "GOOGLE_CREDENTIALS is not valid JSON. Did you paste the full JSON (service account) into Railway Variables?"
-  );
-}
-
-const auth = new GoogleAuth({
-  credentials,
-  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-});
-
-export { auth };
-
-
-
-
-
 // --- Setup Express ---
 const app = express();
-const port = process.env.PORT || 4000;
-const slack = new WebClient(process.env.BOT_USER_TOKEN);
+
+const port = envInt("PORT"); 
+requiredEnv("BOT_USER_TOKEN");
+requiredEnv("SLACK_SIGNING_SECRET");
+
+
+// -- Debug --
+
+const DEBUG = "true";
+function debugEnv(name) {
+  const v = process.env[name];
+  const present = !!(v && v !== "undefined" && v !== "null");
+  const len = present ? String(v).length : 0;
+  if (DEBUG) console.log(`[debug-env] ${name}: present=${present} length=${len}`);
+}
+
+if (DEBUG) {
+  console.log("[debug] booting…");
+  debugEnv("PORT");
+  debugEnv("BOT_USER_TOKEN");
+  debugEnv("SLACK_SIGNING_SECRET");
+  debugEnv("SLACK_LEARNING_CHANNEL_ID");
+  debugEnv("GOOGLE_SERVICE_ACCOUNT_JSON");
+  debugEnv("NOTION_API_KEY");
+  debugEnv("NOTION_PARENT_PAGE_ID"); // ou NOTION_DATABASE_ID selon ton code
+  debugEnv("ENABLE_DEBUG_ROUTES");
+}
+
+// --- Slack client (via service, sans toucher services/) ---
+const slack = makeSlackClient();
 
 // --- Debug routes (optionnel) ---
 if (process.env.ENABLE_DEBUG_ROUTES === "true") {
   registerDebugRoutes(app);
 }
 
-// --- Vérification signature Slack --- (middleware) obligatoire pour les routes Slack et protections des webhook
-async function verifySlack(req, res, next) {
-  try {
-    const raw = await getRawBody(req);
-    const timestamp = req.headers["x-slack-request-timestamp"];
-    const slackSig = req.headers["x-slack-signature"];
-    if (!timestamp || !slackSig) return res.status(400).send("Bad Request");
-    if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 60 * 5) {
-      return res.status(400).send("Ignore stale request");
-    }
-    const base = `v0:${timestamp}:${raw.toString("utf8")}`;
-    const mySig =
-    "v0=" +
-    crypto
-    .createHmac("sha256", process.env.SLACK_SIGNING_SECRET)
-    .update(base)
-    .digest("hex");
-    if (!crypto.timingSafeEqual(Buffer.from(mySig), Buffer.from(slackSig))) {
-      return res.status(401).send("Invalid signature");
-    }
-    const params = new URLSearchParams(raw.toString("utf8"));
-    req.body = Object.fromEntries(params.entries());
-    next();
-  } catch (e) {
-    console.error(e);
-    return res.status(400).send("Bad Request");
-  }
-}
+// --- Slack routes ---
+registerSlackRoutes(app, { slack });
 
-
-// --- Slash commands ---
-app.post("/slack/commands", verifySlack, async (req, res) => {
-  console.log("➡️ Requête Slack reçue");
-  try {
-    if (req.body.command === "/ping") { // simple test
-      return res.json({ response_type: "ephemeral", text: "pong" });
-    }
-    
-    // Le gros de notre application
-    if (req.body.command === "/learning") {
-      const { trigger_id, channel_id } = req.body;
-      res.status(200).send();
-      
-      await slack.views.open({
-        trigger_id,
-        view: {
-          type: "modal",
-          callback_id: "learning_form",
-          private_metadata: JSON.stringify({ channel_id }),
-          title: { type: "plain_text", text: "Learning" },
-          submit: { type: "plain_text", text: "Enregistrer" },
-          close: { type: "plain_text", text: "Annuler" },
-          blocks: [
-            {
-              type: "input",
-              block_id: "who_block",
-              label: { type: "plain_text", text: "Personne" },
-              element: {
-                type: "users_select",
-                action_id: "who_input",
-                placeholder: {
-                  type: "plain_text",
-                  text: "Choisir une personne",
-                },
-              },
-            },
-            {
-              type: "input",
-              block_id: "what_block",
-              label: { type: "plain_text", text: "Nom de la learning" },
-              element: {
-                type: "plain_text_input",
-                action_id: "what_input",
-                placeholder: {
-                  type: "plain_text",
-                  text: "ex: Express + Slack API",
-                },
-              },
-            },
-            {
-              type: "input",
-              block_id: "when_block",
-              label: { type: "plain_text", text: "Jour" },
-              element: {
-                type: "datepicker",
-                action_id: "when_input",
-                placeholder: {
-                  type: "plain_text",
-                  text: "Sélectionne une date",
-                },
-              },
-            },
-            // Pour ajouter l'heure à voir si besoin
-            // {
-            //   type: "input",
-            //   block_id: "time_block",
-            //   label: { type: "plain_text", text: "Heure de début" },
-            //   element: {
-            //     type: "timepicker",
-            //     action_id: "time_input",
-            //     placeholder: { type: "plain_text", text: "HH:MM" },
-            //   },
-            // },
-            {
-              type: "input",
-              block_id: "desc_block",
-              label: { type: "plain_text", text: "Description" },
-              element: {
-                type: "plain_text_input",
-                action_id: "desc_input",
-                multiline: true,
-                placeholder: {
-                  type: "plain_text",
-                  text: "Quelques lignes…",
-                },
-              },
-            },
-            {
-              type: "input",
-              block_id: "res_block",
-              optional: true,
-              label: { type: "plain_text", text: "Ressource (URL)" },
-              element: {
-                type: "plain_text_input",
-                action_id: "res_input",
-                placeholder: { type: "plain_text", text: "https://…" },
-              },
-            },
-          ],
-        },
-      });
-      return;
-    }
-    
-    // --- /learning-list (Slack only)  WIP ---
-    app.command("/learning-list", async ({ ack, body, client }) => {
-      await ack();
-      
-      const botUserId = process.env.SLACK_BOT_USER_ID;
-      const channelId = body.channel_id;
-      
-      try {
-        const res = await client.conversations.history({
-          channel: channelId,
-          limit: 50,
-        });
-        
-        const events = (res.messages || [])
-        .filter(
-          (msg) =>
-            msg.user === botUserId &&
-          msg.text &&
-          msg.text.includes("[LEARNING]")
-        )
-        .map((msg) => ({ ts: msg.ts, text: msg.text }));
-        
-        if (events.length === 0) {
-          await client.chat.postEphemeral({
-            channel: channelId,
-            user: body.user_id,
-            text: "Aucun event Learning trouvé (Slack only).",
-          });
-          return;
-        }
-        
-        const text = events
-        .map((e, i) => `*${i + 1}.* ${e.text.split("\n")[0]} (ts: ${e.ts})`)
-        .join("\n");
-        
-        await client.chat.postEphemeral({
-          channel: channelId,
-          user: body.user_id,
-          text: `📚 *Learning events (Slack only)*\n\n${text}`,
-        });
-      } catch (err) {
-        await client.chat.postEphemeral({
-          channel: channelId,
-          user: body.user_id,
-          text: `❌ Erreur: ${err.message}`,
-        });
-      }
-    });
-    
-    
-    res.status(404).send("Unknown command");
-  } catch (err) {
-    console.error("commands ERROR:", err?.data || err);
-    res.status(500).send("Internal error");
-  }
-});
-
-// --- Interactions ---
-// Une fois le formulaire soumis, on traite les données
-app.post("/slack/interactions", verifySlack, async (req, res) => {
-  const payload = JSON.parse(req.body.payload || "{}");
-  
-  if (
-    payload.type === "view_submission" &&
-    payload.view.callback_id === "learning_form"
-  ) {
-    const pv = payload.view.state.values;
-    
-    const who = pv["who_block"]["who_input"].selected_user;
-    const what = pv["what_block"]["what_input"].value?.trim();
-    const when = pv["when_block"]["when_input"].selected_date;
-    const desc = pv["desc_block"]["desc_input"].value?.trim();
-    const resrc = pv["res_block"]?.["res_input"]?.value?.trim() || "";
-    
-    const isUrl = (s) => /^https?:\/\/\S+$/i.test(s);
-    const errors = {};
-    if (!what) errors["what_block"] = "Nom requis";
-    if (!when) errors["when_block"] = "Date requise";
-    if (resrc && !isUrl(resrc)) errors["res_block"] = "URL invalide";
-    
-    if (Object.keys(errors).length) {
-      return res.json({ response_action: "errors", errors });
-    }
-    
-    const targetChannel = process.env.SLACK_LEARNING_CHANNEL_ID;
-    if (!targetChannel) {
-      await slack.chat.postMessage({
-        channel: payload.user.id,
-        text: "SLACK_LEARNING_CHANNEL_ID non défini côté serveur.",
-      });
-      return res.json({ response_action: "clear" });
-    }
-    
-    // Ferme le modal immédiatement
-    res.json({ response_action: "clear" });
-    
-    // Heure fixe : 14h15 → 14h45 (30 min)
-    const tz = "Europe/Paris";
-    const startAt = DateTime.fromISO(when, { zone: tz }).set({
-      hour: 14,
-      minute: 15,
-      second: 0,
-      millisecond: 0,
-    });
-    
-    //const endAt = startAt.plus({ minutes: 30 }); // Non utilisé mais peut servir si besoin
-    
-    
-    /* -- REMINDER -- En pause pour l'avancer du projet, fonctionnel.
-    await scheduleLearningReminders({
-    startAt,
-    what,
-    who,
-    targetChannel,
-    slack
-    });
-    */
-    
-    // Fetch Slack user info for the person who submitted the form
-    let slackUser = { id: payload.user.id, name: payload.user.username };
-    try {
-      const userInfo = await slack.users.info({ user: payload.user.id });
-      if (userInfo.ok && userInfo.user) {
-        slackUser = {
-          id: userInfo.user.id,
-          name: userInfo.user.name,
-          realName: userInfo.user.real_name,
-          email: userInfo.user.profile?.email,
-        };
-      }
-    } catch (err) {
-      console.error("Erreur récupération user Slack:", err);
-    }
-    
-    // Crée l'événement Google Calendar -- Google-calendar.js
-    let meetLink = "";
-    try {
-      const event = await createGCalEvent({ what, desc, resrc, startAt, slackUser });
-      meetLink = event?.hangoutLink || "";
-    } catch (err) {
-      console.error("Erreur GCal:", err?.response?.data || err);
-      await slack.chat.postMessage({
-        channel: payload.user.id,
-        text: "Impossible de créer l'événement Google Calendar.",
-      });
-    }
-    
-    // Message dans le channel Slack
-    const blocks = [
-      { type: "header", text: { type: "plain_text", text: "Nouvelle learning" } },
-      {
-        type: "section",
-        fields: [
-          { type: "mrkdwn", text: `*Présentateur de la learning:*\n<@${who}>` },
-          { type: "mrkdwn", text: `*Date:*\n${when} ${startAt.toFormat("HH:mm")}` },
-          { type: "mrkdwn", text: `*Sujet de la learning:*\n${what}` }
-        ]
-      },
-      ...(desc
-        ? [{ type: "section", text: { type: "mrkdwn", text: `*Description:*\n${desc}` } }]
-        : []),
-        ...(resrc
-          ? [{ type: "section", text: { type: "mrkdwn", text: `*Ressource:*\n${resrc}` } }]
-          : []),
-          ...(meetLink
-            ? [{
-              type: "section",
-              text: { type: "mrkdwn", text: `*Lien Meet:*\n${meetLink}` }
-            }]
-            : []),
-            {
-              type: "context",
-              elements: [{ type: "mrkdwn", text: `Ajouté par <@${payload.user.id}>` }]
-            }
-          ];
-          
-          // Enregistre dans Notion -- notion.js
-          await createNotionLearning({
-            who, what, when, startAt, desc, resrc 
-          });          
-          
-          // Envoie le message final dans le channel
-          await slack.chat.postMessage({
-            channel: targetChannel,
-            text: `Learning: ${what}`,
-            blocks,
-          });
-          
-          return;
-        }
-        res.status(200).send();
-      });
-      
-      // --- Start server --- On écoute le serveur
-      app.listen(port, () =>
-        console.log(`Listening on http://localhost:${port}`)
-    );
+// --- Start server ---
+console.log("[boot] starting server…");
+console.log("[boot] port =", port);
+app.listen(port, () => console.log(`Listening on http://localhost:${port}`));

@@ -1,7 +1,4 @@
-// reminders.js
 import { DateTime } from "luxon";
-import dotenv from "dotenv";
-dotenv.config();
 
 // Programme les rappels Slack (veille + jour J)
 export async function scheduleLearningReminders({ startAt, what, who, targetChannel, slack }) {

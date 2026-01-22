@@ -9,7 +9,7 @@ export function registerDebugRoutes(app) {
       slack: {
         hasBotToken: Boolean(process.env.BOT_USER_TOKEN),
         hasSigningSecret: Boolean(process.env.SLACK_SIGNING_SECRET),
-        learningChannel: Boolean(process.env.LEARNING_CHANNEL_ID),
+        learningChannel: Boolean(process.env.SLACK_LEARNING_CHANNEL_ID),
       },
       notion: {
         hasApiKey: Boolean(process.env.NOTION_API_KEY),
@@ -75,11 +75,19 @@ export function registerDebugRoutes(app) {
 /* LA COMMANDE CURL POUR TESTER
 
 curl -H "x-admin-token: un_token_long_random" \
-  https://slackbot-event.onrender.com/debug/status
+  https://learning-production-5fff.up.railway.app/debug/status
+
+
+Meilleur visuel :
+curl -s \
+  -H "x-admin-token: un_token_long_random" \
+  https://learning-production-5fff.up.railway.app/debug/status \
+| jq
+
 
 
 Sinon directement sur navigateur (Mozilla) :
-https://slackbot-event.onrender.com/debug/status
+https://learning-production-5fff.up.railway.app/debug/status
 
 Inspecteur -> Network -> Cliquer sur la requete (Forbidden)
 Vous verrez la possibilité de renvoyer, cliquez dessus.
