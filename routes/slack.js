@@ -3,6 +3,7 @@ import { verifySlack } from "../middlewares/verifySlack.js";
 import { handleLearningSubmission } from "../handlers/learningSubmission.js";
 
 export function registerSlackRoutes(app, { slack }) {
+    console.log("[slack] /commands called", { command: req.body.command, user_id: req.body.user_id });
     const router = express.Router();
     
     // ✅ Slash commands
