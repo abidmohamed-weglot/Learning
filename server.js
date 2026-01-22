@@ -49,4 +49,6 @@ if (process.env.ENABLE_DEBUG_ROUTES === "true") {
 registerSlackRoutes(app, { slack });
 
 // --- Start server ---
+console.log("[boot] starting server…");
+console.log("[boot] port =", port);
 app.listen(port, () => console.log(`Listening on http://localhost:${port}`));
