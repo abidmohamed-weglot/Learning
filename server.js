@@ -10,7 +10,7 @@ dotenv.config();
 // --- Setup Express ---
 const app = express();
 
-const port = envInt("PORT", 4000);
+const port = envInt("PORT"); 
 requiredEnv("BOT_USER_TOKEN");
 requiredEnv("SLACK_SIGNING_SECRET");
 
