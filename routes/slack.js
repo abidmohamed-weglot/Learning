@@ -119,12 +119,23 @@ export function registerSlackRoutes(app, { slack }) {
     
     // Interactions (modal submit) -> handler unique
     router.post("/interactions", verifySlack, async (req, res) => {
-        const { ack, run } = await handleLearningSubmission(payload, res, { slack });
-        res.json(ack);
-        run().catch((e) => console.error("[learningSubmission] failed:", e));
-        return;
-        
+        try {
+            const payload = JSON.parse(req.body.payload || "{}");
+            
+            if (payload.type === "view_submission" && payload.view?.callback_id === "learning_form") {
+                const { ack, run } = await handleLearningSubmission(payload, res, { slack });
+                res.json(ack);
+                run().catch((e) => console.error("[learningSubmission] failed:", e));
+                return;
+            }
+            
+            return res.status(200).send();
+        } catch (err) {
+            console.error("[/slack/interactions] error:", err);
+            return res.status(400).send("Bad Request");
+        }
     });
+    
     
     app.use("/slack", router);
 }
